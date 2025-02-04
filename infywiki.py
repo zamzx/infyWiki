@@ -1,87 +1,55 @@
-import wikipediaapi
 from flask import Flask, render_template_string, request, jsonify
-import requests
-from bs4 import BeautifulSoup
+import wikipediaapi
 
-# Initialize Flask and Wikipedia API
 app = Flask(__name__)
 wikipedia = wikipediaapi.Wikipedia(user_agent="YourAppName/1.0 (your@email.com)", language="en")
 
-# Keep track of loaded articles
-loaded_articles = []
+loaded_articles = []  # Tracks loaded articles
 
-# Get first article
+# Get the first article
 def get_first_article():
-    return "A"  # Start from the article titled "A"
+    return "A"
 
-# Get next article
+# Get the next article from Wikipedia
 def get_next_article(title):
     global loaded_articles
 
-    # Fetch the category of the current article
-    category_titles = list(wikipedia.page(title).categories.keys())
-    
-    if category_titles:
-        category = category_titles[0]  # Pick the first category
-        category_page = wikipedia.page(category)
-        all_pages = sorted(category_page.categorymembers.keys())  # Get sorted article titles
-        
-        # Filter out articles already loaded
-        remaining_pages = [p for p in all_pages if p not in loaded_articles]
-        
-        if remaining_pages:
-            next_title = remaining_pages[0]  # Get the first unseen article
-            loaded_articles.append(next_title)  # Mark it as loaded
-            return next_title
+    try:
+        category_titles = list(wikipedia.page(title).categories.keys())
+        if category_titles:
+            category = category_titles[0]  
+            category_page = wikipedia.page(category)
+            all_pages = sorted(category_page.categorymembers.keys())
+
+            remaining_pages = [p for p in all_pages if p not in loaded_articles]
+
+            if remaining_pages:
+                next_title = remaining_pages[0]
+                loaded_articles.append(next_title)
+                return next_title
+    except Exception as e:
+        print(f"Error getting next article: {e}")
 
     return None
 
-# Get images from the Wikipedia page (extract URLs)
-def get_page_images(page):
-    url = f"https://en.wikipedia.org/wiki/{page}"
-    response = requests.get(url)
-    soup = BeautifulSoup(response.text, 'html.parser')
-
-    # Find all image tags
-    images = soup.find_all('img')
-
-    # Extract image URLs from src attribute
-    image_urls = ['https:' + img['src'] for img in images if img.get('src')]
-    return image_urls
-
-# Fetch Wikipedia raw HTML content directly
-def get_raw_html_content(page):
-    url = f"https://en.wikipedia.org/wiki/{page}"
-    response = requests.get(url)
-    soup = BeautifulSoup(response.text, 'html.parser')
-    
-    # Find the main content of the article, usually in <div class="mw-parser-output">
-    main_content = soup.find('div', {'class': 'mw-parser-output'})
-    
-    # Remove citations or footnotes (elements like <sup>, <span>, etc.)
-    for citation in main_content.find_all(['sup', 'span', 'div'], class_='reference'):
-        citation.decompose()  # Remove the citation element
-    
-    # Return the cleaned up raw HTML content
-    return str(main_content) if main_content else str(soup)  # Return the content or entire page if not found
-
+# Main route - loads first article
 @app.route('/')
 def index():
     first_article = get_first_article()
-    html_content = get_raw_html_content(first_article)  # Get raw HTML content
-    return render_template_string(TEMPLATE, title=first_article, content=html_content, images=get_page_images(first_article))
+    return render_template_string(TEMPLATE, title=first_article, iframe_url=f"https://en.wikipedia.org/wiki/{first_article}")
 
-
+# API route to load next article
 @app.route('/next', methods=['POST'])
 def next_article():
     current_title = request.json.get('current_title')
     next_title = get_next_article(current_title)
+
     if next_title:
-        html_content = get_raw_html_content(next_title)  # Get raw HTML content for the next article
-        return render_template_string(TEMPLATE, title=next_title, content=html_content, images=get_page_images(next_title))
-    return jsonify({'title': None, 'content': "No more articles found.", 'images': []})
+        return jsonify({'title': next_title, 'iframe_url': f"https://en.wikipedia.org/wiki/{next_title}"})
 
+    return jsonify({'title': None, 'iframe_url': None})
 
+# HTML Template
 TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -89,41 +57,36 @@ TEMPLATE = """
     <title>Infinite Wikipedia</title>
     <script>
         function loadNextArticle() {
-            fetch('/next', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({current_title: document.getElementById('title').innerText})
-            })
-            .then(response => response.text())  // Expect HTML response, not JSON
-            .then(data => {
-                let container = document.getElementById('article-container');
-                container.innerHTML += data;  // Append new content without resetting page
-                setupScrollListener();  // Re-setup the scroll listener after loading new content
-            });
-        }
+            let currentFrames = document.querySelectorAll('iframe');
+            let lastFrame = currentFrames[currentFrames.length - 1];
 
-        function setupScrollListener() {
-            window.onscroll = function() {
-                if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 5) {
-                    loadNextArticle();
-                }
+            if (lastFrame && window.scrollY + window.innerHeight >= document.body.offsetHeight - 10) {
+                fetch('/next', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({current_title: lastFrame.getAttribute('data-title')})
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.title) {
+                        let iframe = document.createElement('iframe');
+                        iframe.src = data.iframe_url;
+                        iframe.width = "100%";
+                        iframe.height = "800px";
+                        iframe.setAttribute('data-title', data.title);
+                        iframe.style.border = "none";
+                        document.body.appendChild(iframe);
+                    }
+                });
             }
         }
 
-        // Setup the scroll listener when the page loads
-        window.onload = function() {
-            setupScrollListener();
-        };
+        window.onscroll = loadNextArticle;
     </script>
 </head>
 <body>
-    <div id="article-container">
-        <h2 id='title'>{{ title }}</h2>
-        <div>{{ content | safe }}</div>  <!-- Render raw HTML with proper formatting -->
-        {% for img in images %}
-            <img src="{{ img }}" style="max-width:100%;"><br>
-        {% endfor %}
-    </div>
+    <h2>{{ title }}</h2>
+    <iframe src="{{ iframe_url }}" width="100%" height="800px" style="border:none;" data-title="{{ title }}"></iframe>
 </body>
 </html>
 """
