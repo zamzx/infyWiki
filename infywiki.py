@@ -132,40 +132,74 @@ TEMPLATE = """
   <title>WikiFlow - Infinite Wikipedia</title>
   <style>
     body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
+    /* Top loading bar */
+    #top-loading {
+      position: fixed;
+      top: 0;
+      left: 0;
+      height: 4px;
+      background-color: #3498db;
+      width: 0%;
+      transition: width 0.4s ease;
+      z-index: 1500;
+    }
+    /* Search container (placed just below the loading bar) */
     #search-container {
-      position: fixed; top: 0; left: 0; width: 100%; background: white;
-      padding: 10px; box-shadow: 0px 2px 5px rgba(0, 0, 0, 0.2);
-      text-align: center; z-index: 1000;
+      position: fixed;
+      top: 4px;
+      left: 0;
+      width: 100%;
+      background: white;
+      padding: 10px;
+      box-shadow: 0px 2px 5px rgba(0, 0, 0, 0.2);
+      text-align: center;
+      z-index: 1000;
     }
     #search-container input { padding: 8px; font-size: 16px; width: 250px; }
     #current-title { font-size: 18px; font-weight: bold; margin-top: 5px; }
+    /* Content area */
     #content { margin-top: 80px; display: flex; flex-direction: column; align-items: center; }
     iframe { width: 90%; height: 800px; border: none; margin-bottom: 10px; }
-    #loading { display: none; text-align: center; margin-top: 10px; }
+    /* Bottom persistent indicator */
+    #bottom-indicator {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      text-align: center;
+      padding: 5px;
+      background: rgba(0, 0, 0, 0.7);
+      color: #fff;
+      font-size: 14px;
+      z-index: 1000;
+    }
   </style>
 </head>
 <body>
 
+  <!-- Top loading bar -->
+  <div id="top-loading"></div>
+
+  <!-- Search container -->
   <div id="search-container">
     <input type="text" id="search" placeholder="Search Wikipedia">
     <button onclick="searchArticle()">Search</button>
     <div id="current-title">Welcome! Search an article.</div>
   </div>
 
-  <div id="loading">
-    <p>Loading next articles...</p>
-  </div>
-
+  <!-- Content area for iframes -->
   <div id="content"></div>
+
+  <!-- Persistent bottom indicator -->
+  <div id="bottom-indicator">Scroll for more articles</div>
 
   <script>
     let loadedPages = new Set();
     let isLoading = false;
 
-    // Set up an IntersectionObserver to update the current article title.
+    // IntersectionObserver to update the current article title
     let observer = new IntersectionObserver((entries) => {
       entries.forEach(entry => {
-        // If the iframe is at least 50% visible, update the title.
         if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
           const title = entry.target.dataset.title;
           document.getElementById('current-title').textContent = 'Reading: ' + title;
@@ -173,11 +207,26 @@ TEMPLATE = """
       });
     }, { threshold: 0.5 });
 
+    // Functions for the top loading bar
+    function startLoadingBar() {
+      const topLoading = document.getElementById('top-loading');
+      topLoading.style.width = '80%';
+    }
+
+    function finishLoadingBar() {
+      const topLoading = document.getElementById('top-loading');
+      topLoading.style.width = '100%';
+      setTimeout(() => {
+         topLoading.style.width = '0%';
+      }, 300);
+    }
+
     function searchArticle() {
       const searchTerm = document.getElementById('search').value;
       if (searchTerm.trim() === '') return;
-      // Clear loaded pages for a new search
+      // Reset loaded pages for a new search
       loadedPages = new Set();
+      startLoadingBar();
       fetch('/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -188,13 +237,13 @@ TEMPLATE = """
         document.getElementById('content').innerHTML = '';  // Clear previous results
         if (data.articles.length > 0) {
           data.articles.forEach(article => loadIframe(article.title, article.url));
-          // Set the title to the first article
           document.getElementById('current-title').textContent = 'Reading: ' + data.articles[0].title;
         } else {
           alert('No results found!');
         }
       })
-      .catch(error => console.error('Error fetching search results:', error));
+      .catch(error => console.error('Error fetching search results:', error))
+      .finally(() => finishLoadingBar());
     }
 
     function loadIframe(title, url) {
@@ -213,7 +262,7 @@ TEMPLATE = """
       const isAtBottom = (window.innerHeight + window.scrollY) >= document.body.offsetHeight - 10;
       if (isAtBottom) {
         isLoading = true;
-        document.getElementById('loading').style.display = 'block';
+        startLoadingBar();
         fetch('/next_article', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -223,8 +272,9 @@ TEMPLATE = """
         .then(data => {
           data.articles.forEach(article => loadIframe(article.title, article.url));
         })
+        .catch(error => console.error('Error fetching next articles:', error))
         .finally(() => {
-          document.getElementById('loading').style.display = 'none';
+          finishLoadingBar();
           isLoading = false;
         });
       }
