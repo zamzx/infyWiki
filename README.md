@@ -9,3 +9,6 @@ formatting fixes
 fix images to be in shadowboxes 
 
 LLM driven features ? 
+
+
+credit to a few hours wrangling with chat-gpt
