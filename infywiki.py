@@ -4,41 +4,36 @@ import wikipediaapi
 app = Flask(__name__)
 wikipedia = wikipediaapi.Wikipedia(user_agent="YourAppName/1.0 (your@email.com)", language="en")
 
-loaded_articles = []  # Tracks loaded articles
+loaded_articles = []  # Track loaded articles
 
-# Get the first article
 def get_first_article():
-    return "A"
+    return "A"  # Start from article "A"
 
-# Get the next article from Wikipedia
 def get_next_article(title):
     global loaded_articles
 
     try:
-        category_titles = list(wikipedia.page(title).categories.keys())
-        if category_titles:
-            category = category_titles[0]  
-            category_page = wikipedia.page(category)
-            all_pages = sorted(category_page.categorymembers.keys())
+        page = wikipedia.page(title)
 
-            remaining_pages = [p for p in all_pages if p not in loaded_articles]
+        # Get actual linked articles, ignoring categories
+        linked_articles = [link for link in page.links.keys() if not link.startswith("Category:")]
 
-            if remaining_pages:
-                next_title = remaining_pages[0]
-                loaded_articles.append(next_title)
-                return next_title
+        remaining_articles = [p for p in linked_articles if p not in loaded_articles]
+
+        if remaining_articles:
+            next_title = remaining_articles[0]  # Get the first valid article
+            loaded_articles.append(next_title)
+            return next_title
     except Exception as e:
         print(f"Error getting next article: {e}")
 
     return None
 
-# Main route - loads first article
 @app.route('/')
 def index():
     first_article = get_first_article()
     return render_template_string(TEMPLATE, title=first_article, iframe_url=f"https://en.wikipedia.org/wiki/{first_article}")
 
-# API route to load next article
 @app.route('/next', methods=['POST'])
 def next_article():
     current_title = request.json.get('current_title')
@@ -49,7 +44,7 @@ def next_article():
 
     return jsonify({'title': None, 'iframe_url': None})
 
-# HTML Template
+# Updated HTML Template
 TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -60,33 +55,43 @@ TEMPLATE = """
             let currentFrames = document.querySelectorAll('iframe');
             let lastFrame = currentFrames[currentFrames.length - 1];
 
-            if (lastFrame && window.scrollY + window.innerHeight >= document.body.offsetHeight - 10) {
-                fetch('/next', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({current_title: lastFrame.getAttribute('data-title')})
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.title) {
-                        let iframe = document.createElement('iframe');
-                        iframe.src = data.iframe_url;
-                        iframe.width = "100%";
-                        iframe.height = "800px";
-                        iframe.setAttribute('data-title', data.title);
-                        iframe.style.border = "none";
-                        document.body.appendChild(iframe);
-                    }
-                });
+            if (lastFrame) {
+                let rect = lastFrame.getBoundingClientRect();
+                if (rect.bottom < window.innerHeight + 50) {
+                    fetch('/next', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({current_title: lastFrame.getAttribute('data-title')})
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.title) {
+                            let iframe = document.createElement('iframe');
+                            iframe.src = data.iframe_url;
+                            iframe.width = "100%";
+                            iframe.height = "800px";
+                            iframe.setAttribute('data-title', data.title);
+                            iframe.style.border = "none";
+                            iframe.style.display = "block";
+                            iframe.style.marginTop = "10px";
+
+                            document.body.appendChild(iframe);
+                        }
+                    });
+                }
             }
         }
 
-        window.onscroll = loadNextArticle;
+        window.addEventListener('scroll', () => {
+            requestAnimationFrame(loadNextArticle);
+        });
+
+        document.addEventListener('DOMContentLoaded', loadNextArticle);
     </script>
 </head>
 <body>
     <h2>{{ title }}</h2>
-    <iframe src="{{ iframe_url }}" width="100%" height="800px" style="border:none;" data-title="{{ title }}"></iframe>
+    <iframe src="{{ iframe_url }}" width="100%" height="800px" style="border:none; display:block;" data-title="{{ title }}"></iframe>
 </body>
 </html>
 """
