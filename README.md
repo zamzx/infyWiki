@@ -3,9 +3,9 @@ A single file flask server that loads wikipedia articles from until you get tire
 
 <img width="677" alt="Screenshot 2025-02-04 at 6 56 34 AM" src="https://github.com/user-attachments/assets/e9390301-81e7-42f4-9849-8840647de35d" />
 
+[WikFlow.webm](https://github.com/user-attachments/assets/95b3053f-c129-4983-b576-46745129bb82)
 
 
-https://github.com/user-attachments/assets/2cc8f543-8fcf-479d-8289-17f1431b41eb
 
 
 
