@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wikipedia Infinite Scroll</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            text-align: center;
+        }
+        iframe {
+            width: 100%;
+            height: 800px;
+            border: none;
+        }
+        #loading {
+            display: none;
+            text-align: center;
+        }
+        #loading-bar {
+            width: 50%;
+            height: 4px;
+            background: #4CAF50;
+            margin: 10px auto;
+        }
+        #search-container {
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Wikipedia Infinite Scroll</h1>
+
+    <div id="search-container">
+        <input type="text" id="search" placeholder="Enter search term">
+        <button onclick="searchArticle()">Search</button>
+    </div>
+
+    <div id="loading">
+        <div id="loading-bar"></div>
+        <p>Loading next article...</p>
+    </div>
+
+    <div id="content"></div>
+
+    <script>
+        let pages = [];
+        let currentIndex = 0;
+        let searchTerm = '';
+
+        function searchArticle() {
+            searchTerm = document.getElementById('search').value;
+
+            if (searchTerm.trim() === '') return;
+
+            fetch('/search', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({search_term: searchTerm})
+            })
+            .then(response => response.json())
+            .then(data => {
+                pages = data.pages;
+                currentIndex = 0;
+                if (pages.length > 0) {
+                    loadIframe(pages[currentIndex].url);
+                } else {
+                    alert('No results found!');
+                }
+            });
+        }
+
+        function loadIframe(url) {
+            const iframe = document.createElement('iframe');
+            iframe.src = url;
+            iframe.style.display = "block";
+            document.getElementById('content').appendChild(iframe);
+
+            iframe.onload = () => {
+                setTimeout(() => {
+                    window.onscroll = loadNextArticle;
+                }, 1000);
+            };
+        }
+
+        function loadNextArticle() {
+            const isAtBottom = (window.innerHeight + window.scrollY) >= document.body.offsetHeight - 50;
+
+            if (isAtBottom) {
+                document.getElementById('loading').style.display = 'block';
+                document.getElementById('loading-bar').style.width = '0%';
+
+                let progressBarInterval = setInterval(() => {
+                    let currentWidth = parseInt(document.getElementById('loading-bar').style.width, 10);
+                    if (currentWidth < 100) {
+                        currentWidth += 2;
+                        document.getElementById('loading-bar').style.width = `${currentWidth}%`;
+                    } else {
+                        clearInterval(progressBarInterval);
+                    }
+                }, 30);
+
+                setTimeout(() => {
+                    if (currentIndex < pages.length - 1) {
+                        currentIndex++;
+                        loadIframe(pages[currentIndex].url);
+                        document.getElementById('loading').style.display = 'none';
+                    } else {
+                        fetchMorePages();
+                    }
+                }, 1000);
+            }
+        }
+
+        function fetchMorePages() {
+            fetch('/load_more', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({search_term: searchTerm})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.pages.length > 0) {
+                    pages = pages.concat(data.pages);
+                    currentIndex++;
+                    loadIframe(pages[currentIndex].url);
+                } else {
+                    console.log("No more articles found.");
+                }
+                document.getElementById('loading').style.display = 'none';
+            });
+        }
+
+        window.onscroll = loadNextArticle;
+    </script>
+
+</body>
+</html>
